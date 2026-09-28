@@ -106,10 +106,80 @@ L'audit complet est régénérable dans `data/processed/cleaning_audit.json`. Ce
 volumes ne préjugent pas encore de l'équilibre des futures fenêtres : cette
 question sera traitée lors de la préparation des jeux d'entraînement et de test.
 
+## 3. Préparation des fenêtres et entraînement
+
+### Séparation correcte des données
+
+La séparation est faite par **participant**, avant le découpage en fenêtres. Ce
+choix est plus réaliste qu'un tirage aléatoire de fenêtres : des séquences du même
+participant sont proches et rendraient les résultats artificiellement optimistes
+si elles figuraient à la fois dans les jeux d'entraînement et de test.
+
+Avec une graine fixée à `42`, les 24 participants sont répartis ainsi :
+
+| Jeu | Participants | Rôle |
+| --- | --- | --- |
+| Entraînement | 1, 4, 6, 7, 8, 10, 11, 12, 13, 16, 17, 18, 19, 20, 21, 24 | Apprentissage des poids et de la normalisation |
+| Validation | 3, 5, 15, 23 | Arrêt anticipé et choix du meilleur état du modèle |
+| Test | 2, 9, 14, 22 | Évaluation finale, jamais utilisée pendant l'apprentissage |
+
+Chaque enregistrement est découpé indépendamment en fenêtres de **100
+échantillons** (2 secondes à 50 Hz), avec un décalage de 50 échantillons (1
+seconde). Aucune fenêtre ne traverse donc la frontière entre deux essais. Les
+moyennes et écarts-types de normalisation sont estimés à partir des signaux bruts
+des seuls participants d'entraînement, puis intégrés directement au modèle.
+
+### Modèle léger
+
+Le script [`src/train_model.py`](src/train_model.py) entraîne un petit CNN 1D :
+
+```text
+Fenêtre (100 × 9)
+→ Normalisation embarquée
+→ Conv1D 16 filtres (noyau 5) + max-pooling
+→ Conv1D 24 filtres (noyau 3)
+→ GlobalAveragePooling → Dense 16 → Softmax 6 classes
+```
+
+Cette architecture ne comporte qu'environ **2 400 paramètres entraînables**. La
+pondération des classes compense les durées inégales des essais pendant
+l'apprentissage, sans modifier le jeu de test.
+
+### Exécution
+
+Créer l'environnement local, installer TensorFlow et lancer l'entraînement :
+
+```bash
+python3 -m venv .venv
+.venv/bin/python -m pip install -r requirements.txt
+.venv/bin/python src/train_model.py --epochs 25
+```
+
+Le script écrit le modèle Keras dans `models/activity_cnn.keras` et toutes les
+informations nécessaires à la reproductibilité (split, statistiques de
+normalisation, nombre de fenêtres, historique et résultats) dans
+`models/training_metadata.json`.
+
+### Résultat de l'entraînement
+
+L'entraînement s'est arrêté automatiquement après **16 époques** (arrêt
+anticipé sur l'accuracy de validation). Le découpage a produit 18 683 fenêtres
+d'entraînement, 4 487 fenêtres de validation et 4 550 fenêtres de test. Le
+modèle comporte **2 414 paramètres entraînables**.
+
+| Jeu | Accuracy mesurée |
+| --- | ---: |
+| Entraînement | 98,46 % |
+| Validation | 90,60 % |
+| Test (participants totalement écartés de l'apprentissage) | 93,69 % |
+
+La valeur de test est conservée telle quelle : aucun réglage d'architecture ou
+d'hyperparamètre n'a été sélectionné à partir de ce jeu. L'étape suivante
+complétera son analyse avec le F1-score et la matrice de confusion.
+
 ## Étapes restantes
 
-1. Découper les enregistrements en fenêtres temporelles et séparer les
-   participants entre entraînement, validation et test.
-2. Entraîner et évaluer un modèle léger ; analyser sa matrice de confusion.
-3. Convertir le modèle en TensorFlow Lite, mesurer sa taille et son temps
+1. Évaluer le modèle : accuracy, F1-score, matrice de confusion et analyse des
+   activités confondues.
+2. Convertir le modèle en TensorFlow Lite, mesurer sa taille et son temps
    d'inférence, puis simuler l'arrivée progressive des mesures.

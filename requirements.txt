@@ -1,0 +1,3 @@
+# Le nettoyage utilise uniquement la bibliothèque standard Python.
+# TensorFlow inclut NumPy et sert à l'entraînement puis à l'export TensorFlow Lite.
+tensorflow==2.16.1
