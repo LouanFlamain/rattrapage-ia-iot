@@ -258,7 +258,63 @@ limite principale du modèle. Une fenêtre plus longue ou des caractéristiques
 fréquentielles pourraient améliorer cette distinction, au prix d'une latence et
 d'un coût de calcul plus élevés.
 
-## Étapes restantes
+## 5. Export Edge AI et simulation IoT — consigne 4
 
-1. Convertir le modèle en TensorFlow Lite, mesurer sa taille et son temps
-   d'inférence, puis simuler l'arrivée progressive des mesures.
+### Export TensorFlow Lite
+
+Le script [`src/export_tflite.py`](src/export_tflite.py) convertit le modèle
+Keras en `activity_cnn_int8.tflite`. La quantification post-entraînement est
+**entièrement int8** : les poids, les activations, l'entrée et la sortie sont
+quantifiés. Un échantillon équilibré de 20 fenêtres par activité, provenant
+exclusivement des participants d'entraînement, sert à calibrer cette
+quantification. Les ensembles de validation et de test restent donc isolés.
+
+```bash
+.venv/bin/python src/export_tflite.py
+```
+
+Le fichier `models/tflite_metadata.json` indique notamment le type et les
+paramètres de quantification des tenseurs d'entrée et de sortie. Ces paramètres
+sont indispensables pour convertir correctement les mesures flottantes d'un
+capteur vers le format int8 du modèle.
+
+### Simulation de flux capteur
+
+Le script [`src/simulate_iot.py`](src/simulate_iot.py) rejoue progressivement un
+CSV nettoyé comme si les neuf mesures arrivaient d'un capteur. Il mémorise 100
+mesures (2 secondes), puis infère une activité toutes les 50 nouvelles mesures
+(1 seconde) avec l'interpréteur TensorFlow Lite. La console affiche le mouvement
+détecté et son niveau de confiance.
+
+```bash
+# Rejoue les dix premières décisions d'un enregistrement de jogging du test.
+.venv/bin/python src/simulate_iot.py
+
+# Rejoue l'intégralité d'un autre fichier à cadence réelle de 50 Hz.
+.venv/bin/python src/simulate_iot.py \
+  --input-file data/processed/clean_recordings/wlk_7/sub_2.csv \
+  --max-predictions 0 --realtime
+```
+
+La simulation exécute exactement les étapes qu'utiliserait un objet connecté :
+accumulation d'une fenêtre de données brutes, quantification int8 à l'entrée,
+inférence TFLite et déquantification de la confiance en sortie. Le fichier est
+lu ligne par ligne : seules les 100 dernières mesures sont conservées en mémoire.
+
+### Résultat de l'export et de la simulation
+
+Le modèle exporté est [`models/activity_cnn_int8.tflite`](models/activity_cnn_int8.tflite).
+Il fait **10 272 octets** (environ 10,0 KiB) et utilise une entrée `(1, 100, 9)`
+et une sortie `(1, 6)`, toutes deux au format `int8`. Les échelles et points zéro
+de quantification sont sauvegardés dans `models/tflite_metadata.json`.
+
+Sur les dix premières fenêtres (deux secondes, puis une décision par seconde)
+de l'enregistrement `jog_9/sub_2.csv`, le simulateur a détecté `jog` dix fois
+sur dix avec une confiance de 99,6 %. Cette démonstration vérifie la chaîne
+complète de données : CSV capteur → buffer temporel → quantification → modèle
+TFLite → libellé et confiance dans la console.
+
+## Étape restante
+
+Mesurer la taille du modèle TensorFlow Lite et le temps moyen d'inférence, puis
+discuter sa pertinence et ses optimisations possibles pour un ESP32.

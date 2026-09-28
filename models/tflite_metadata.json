@@ -1,0 +1,73 @@
+{
+  "source_model": "models/activity_cnn.keras",
+  "format": "TensorFlow Lite",
+  "quantization": "full_int8",
+  "model_size_bytes": 10272,
+  "class_names": [
+    "dws",
+    "ups",
+    "wlk",
+    "jog",
+    "sit",
+    "std"
+  ],
+  "sensor_columns": [
+    "gravity.x",
+    "gravity.y",
+    "gravity.z",
+    "userAcceleration.x",
+    "userAcceleration.y",
+    "userAcceleration.z",
+    "rotationRate.x",
+    "rotationRate.y",
+    "rotationRate.z"
+  ],
+  "window_size_samples": 100,
+  "stride_samples": 50,
+  "sampling_frequency_hz": 50,
+  "calibration": {
+    "participants": [
+      1,
+      4,
+      6,
+      7,
+      8,
+      10,
+      11,
+      12,
+      13,
+      16,
+      17,
+      18,
+      19,
+      20,
+      21,
+      24
+    ],
+    "windows_per_class": 20,
+    "windows_total": 120
+  },
+  "input_tensor": {
+    "shape": [
+      1,
+      100,
+      9
+    ],
+    "dtype": "int8",
+    "quantization": {
+      "scale": 0.10473107546567917,
+      "zero_point": 2
+    }
+  },
+  "output_tensor": {
+    "shape": [
+      1,
+      6
+    ],
+    "dtype": "int8",
+    "quantization": {
+      "scale": 0.00390625,
+      "zero_point": -128
+    }
+  }
+}
