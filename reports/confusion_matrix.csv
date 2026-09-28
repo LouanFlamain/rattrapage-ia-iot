@@ -1,0 +1,7 @@
+true_class \ predicted_class,dws,ups,wlk,jog,sit,std
+dws,292,50,24,16,0,0
+ups,67,366,45,1,3,0
+wlk,48,18,1141,0,0,0
+jog,0,1,0,442,0,0
+sit,1,0,0,0,1125,0
+std,0,9,4,0,0,897

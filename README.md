@@ -177,9 +177,88 @@ La valeur de test est conservée telle quelle : aucun réglage d'architecture ou
 d'hyperparamètre n'a été sélectionné à partir de ce jeu. L'étape suivante
 complétera son analyse avec le F1-score et la matrice de confusion.
 
+## 4. Évaluation — consigne 3
+
+Le script [`src/evaluate_model.py`](src/evaluate_model.py) recharge le modèle
+entraîné et évalue uniquement les quatre participants du jeu de test (2, 9, 14
+et 22). Il reconstruit exactement les mêmes fenêtres de deux secondes, puis
+produit :
+
+- l'accuracy globale ;
+- precision, recall et F1-score par activité ;
+- F1 macro et F1 pondéré, plus robustes que l'accuracy en présence de classes
+  dont la durée totale diffère ;
+- une matrice de confusion, avec les lignes correspondant aux vraies activités
+  et les colonnes aux activités prédites ;
+- une liste des confusions les plus fréquentes.
+
+Exécution :
+
+```bash
+.venv/bin/python src/evaluate_model.py
+```
+
+Les artefacts sont écrits dans `reports/` : `evaluation.json`,
+`classification_report.csv` et `confusion_matrix.csv`.
+
+### Résultats sur le jeu de test
+
+L'évaluation porte sur **4 550 fenêtres** des participants 2, 9, 14 et 22. Ces
+participants ne font pas partie du jeu d'entraînement ni du jeu de validation.
+
+| Métrique | Valeur |
+| --- | ---: |
+| Accuracy | 93,69 % |
+| Precision macro | 90,67 % |
+| Recall macro | 90,86 % |
+| F1-score macro | 90,72 % |
+| F1-score pondéré | 93,69 % |
+
+Le F1 macro est inférieur à l'accuracy car il donne le même poids aux six
+activités ; il met donc mieux en évidence les performances plus faibles sur les
+deux activités d'escaliers, moins représentées et plus difficiles à séparer.
+
+| Activité | Precision | Recall | F1-score | Fenêtres |
+| --- | ---: | ---: | ---: | ---: |
+| Descente (`dws`) | 71,57 % | 76,44 % | 73,92 % | 382 |
+| Montée (`ups`) | 82,43 % | 75,93 % | 79,05 % | 482 |
+| Marche (`wlk`) | 93,99 % | 94,53 % | 94,26 % | 1 207 |
+| Jogging (`jog`) | 96,30 % | 99,77 % | 98,00 % | 443 |
+| Assis (`sit`) | 99,73 % | 99,91 % | 99,82 % | 1 126 |
+| Debout (`std`) | 100,00 % | 98,57 % | 99,28 % | 910 |
+
+### Matrice de confusion
+
+Lignes : vraie activité. Colonnes : activité prédite.
+
+| Vrai \ Prédit | dws | ups | wlk | jog | sit | std |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `dws` | 292 | 50 | 24 | 16 | 0 | 0 |
+| `ups` | 67 | 366 | 45 | 1 | 3 | 0 |
+| `wlk` | 48 | 18 | 1 141 | 0 | 0 | 0 |
+| `jog` | 0 | 1 | 0 | 442 | 0 | 0 |
+| `sit` | 1 | 0 | 0 | 0 | 1 125 | 0 |
+| `std` | 0 | 9 | 4 | 0 | 0 | 897 |
+
+### Analyse des mouvements reconnus et confondus
+
+Les postures `sit` et `std`, ainsi que le `jog`, sont très bien reconnues (F1
+supérieur à 98 %). La gravité sur trois axes apporte un repère stable pour les
+postures ; le jogging a aussi une signature dynamique beaucoup plus marquée que
+la marche.
+
+Les principales erreurs concernent les escaliers : 67 fenêtres de montée sont
+prédites comme une descente (13,90 % des montées) et 50 fenêtres de descente sont
+prédites comme une montée (13,09 % des descentes). Ces deux activités présentent
+des cycles de marche similaires ; les variations de geste et d'orientation du
+téléphone selon les participants expliquent probablement cette proximité. La
+marche est parfois associée aux escaliers (48 fenêtres prédites `dws`, 18
+prédites `ups`), ce qui confirme que les mouvements locomoteurs constituent la
+limite principale du modèle. Une fenêtre plus longue ou des caractéristiques
+fréquentielles pourraient améliorer cette distinction, au prix d'une latence et
+d'un coût de calcul plus élevés.
+
 ## Étapes restantes
 
-1. Évaluer le modèle : accuracy, F1-score, matrice de confusion et analyse des
-   activités confondues.
-2. Convertir le modèle en TensorFlow Lite, mesurer sa taille et son temps
+1. Convertir le modèle en TensorFlow Lite, mesurer sa taille et son temps
    d'inférence, puis simuler l'arrivée progressive des mesures.
