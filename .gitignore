@@ -1,0 +1,9 @@
+# Données sources et données générées : elles sont téléchargées localement,
+# mais ne doivent pas être versionnées.
+data/raw/
+data/processed/
+
+# Environnement local et fichiers temporaires Python.
+.venv/
+__pycache__/
+*.py[cod]
