@@ -5,6 +5,19 @@ inertielles. Elle reproduit sur ordinateur une chaîne destinée, à terme, à u
 microcontrôleur tel qu'un ESP32 : préparation des mesures, classification légère,
 export TensorFlow Lite et inférence simulée en flux.
 
+## Livrables fournis
+
+| Livrable attendu | Fichier(s) fourni(s) |
+| --- | --- |
+| Code source d'entraînement | `src/clean_data.py`, `src/train_model.py`, `src/evaluate_model.py`, `src/export_tflite.py`, `src/benchmark_tflite.py` |
+| Modèle exporté pour l'Edge AI | `models/activity_cnn_int8.tflite` et `models/tflite_metadata.json` |
+| Script de simulation IoT et d'inférence | `src/simulate_iot.py` |
+| README de documentation | Ce fichier : dataset, prétraitement, architecture, résultats, limites et exécution |
+
+Le dataset public n'est pas inclus dans le dépôt, car il est volumineux ; la
+commande de téléchargement officielle et l'ensemble du pipeline de préparation
+sont fournis ci-dessous. Les modèles et rapports produits, eux, sont inclus.
+
 ## 1. Dataset retenu
 
 Le dataset public [MotionSense](https://github.com/mmalekzadeh/motion-sense)
@@ -174,8 +187,8 @@ modèle comporte **2 414 paramètres entraînables**.
 | Test (participants totalement écartés de l'apprentissage) | 93,69 % |
 
 La valeur de test est conservée telle quelle : aucun réglage d'architecture ou
-d'hyperparamètre n'a été sélectionné à partir de ce jeu. L'étape suivante
-complétera son analyse avec le F1-score et la matrice de confusion.
+d'hyperparamètre n'a été sélectionné à partir de ce jeu. Son analyse détaillée
+(F1-score et matrice de confusion) est présentée dans la section suivante.
 
 ## 4. Évaluation — consigne 3
 
@@ -314,7 +327,61 @@ sur dix avec une confiance de 99,6 %. Cette démonstration vérifie la chaîne
 complète de données : CSV capteur → buffer temporel → quantification → modèle
 TFLite → libellé et confiance dans la console.
 
-## Étape restante
+## 6. Contraintes embarquées — consigne 5
 
-Mesurer la taille du modèle TensorFlow Lite et le temps moyen d'inférence, puis
-discuter sa pertinence et ses optimisations possibles pour un ESP32.
+### Mesure reproductible
+
+Le script [`src/benchmark_tflite.py`](src/benchmark_tflite.py) mesure le modèle
+TFLite déjà chargé et alloué, sur 1 000 fenêtres réelles de test, après 100
+inférences de chauffe. Le chronométrage comprend `set_tensor`, `invoke` et
+`get_tensor` ; il exclut volontairement l'ouverture du fichier, le fenêtrage et
+la quantification, qui dépendent surtout du code d'acquisition de la cible.
+
+```bash
+.venv/bin/python src/benchmark_tflite.py
+```
+
+Le résultat est sauvegardé dans `reports/edge_benchmark.json`. Les chiffres
+obtenus sont les suivants :
+
+| Mesure | Résultat |
+| --- | ---: |
+| Taille du fichier `.tflite` | 10 272 octets (10,03 KiB) |
+| Inférences mesurées | 1 000 |
+| Inférences de chauffe | 100 |
+| Latence moyenne | 0,0122 ms |
+| Latence médiane | 0,0119 ms |
+| Latence p95 | 0,0148 ms |
+
+Cette mesure a été obtenue sous macOS/Darwin arm64 avec TensorFlow 2.16.1. Elle
+ne doit pas être interprétée comme une mesure ESP32 : le processeur, les
+instructions disponibles et l'implémentation TFLite Micro seront différents.
+
+### Pertinence pour un ESP32
+
+Le modèle int8 occupe environ 10 KiB en Flash. Son buffer d'entrée représente
+seulement `100 × 9 = 900` octets en int8 (ou 3 600 octets si les mesures sont
+conservées en float32 avant quantification). Cette taille rend le modèle a priori
+compatible avec un ESP32, qui dispose typiquement de bien plus de mémoire Flash
+et SRAM. Il faut néanmoins mesurer sur la carte le *tensor arena* réellement
+requis par TensorFlow Lite Micro, ainsi que la latence sans le délégué XNNPACK de
+l'ordinateur hôte. L'espace doit aussi rester suffisant pour le programme, la
+pile, l'acquisition I²C/SPI et, le cas échéant, le Wi-Fi.
+
+Les opérations exportées sont des opérations TFLite Micro courantes (`SUB`,
+`MUL`, `CONV_2D`, `MAX_POOL_2D`, `MEAN`, `FULLY_CONNECTED` et `SOFTMAX`) ; sur la
+cible, un résolveur ne déclarant que ces opérations et des buffers statiques
+limitera la mémoire.
+
+Optimisations envisageables si les mesures sur ESP32 sont insuffisantes :
+
+1. utiliser TensorFlow Lite Micro int8 avec les optimisations ESP-NN adaptées au
+   processeur et un *tensor arena* calibré sur la carte ;
+2. réduire le nombre de filtres des convolutions (16 et 24 actuellement) ou la
+   taille de la couche dense, puis réévaluer le F1-score ;
+3. réduire le nombre de canaux capteur ou utiliser des grandeurs dérivées, au
+   prix possible d'une baisse de reconnaissance des postures ;
+4. augmenter le pas entre deux prédictions pour réduire la consommation, en
+   acceptant une détection moins réactive ;
+5. si la précision le permet, raccourcir la fenêtre de deux secondes afin de
+   diminuer simultanément mémoire d'entrée et latence de décision.

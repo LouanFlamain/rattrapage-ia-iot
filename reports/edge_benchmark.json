@@ -1,0 +1,28 @@
+{
+  "model_path": "models/activity_cnn_int8.tflite",
+  "model_size_bytes": 10272,
+  "model_size_kib": 10.03125,
+  "inferences_measured": 1000,
+  "warmup_inferences": 100,
+  "input_shape": [
+    1,
+    100,
+    9
+  ],
+  "input_dtype": "int8",
+  "latency": {
+    "mean_ms": 0.012213543000000002,
+    "median_ms": 0.011875,
+    "p95_ms": 0.01475,
+    "min_ms": 0.01175,
+    "max_ms": 0.042709
+  },
+  "measurement_scope": "set_tensor + invoke + get_tensor; allocation, CSV, fenêtrage et quantification exclus",
+  "host": {
+    "system": "Darwin",
+    "release": "25.5.0",
+    "machine": "arm64",
+    "python": "3.9.6",
+    "tensorflow": "2.16.1"
+  }
+}
