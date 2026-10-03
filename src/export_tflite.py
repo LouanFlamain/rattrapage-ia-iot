@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Convertit le CNN MotionSense en modèle TensorFlow Lite entièrement int8."""
+"""Convert the MotionSense CNN to a fully int8 TensorFlow Lite model."""
 
 from __future__ import annotations
 
@@ -29,7 +29,7 @@ def parse_arguments() -> argparse.Namespace:
         "--calibration-windows-per-class",
         type=int,
         default=20,
-        help="nombre de fenêtres train représentatives utilisées par classe pour la quantification",
+        help="number of representative training windows per class used for quantization",
     )
     return parser.parse_args()
 
@@ -45,7 +45,7 @@ def load_training_windows(
     window_size: int,
     stride: int,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Construit des fenêtres uniquement à partir des participants train."""
+    """Build windows from training participants only."""
     recordings: list[tuple[np.ndarray, int]] = []
     for row in load_manifest(manifest_path):
         if int(row["subject_id"]) not in train_subjects:
@@ -61,15 +61,15 @@ def select_calibration_windows(
     per_class: int,
     seed: int,
 ) -> np.ndarray:
-    """Sélectionne un échantillon équilibré, sans utiliser validation ni test."""
+    """Select a balanced sample without using validation or test data."""
     if per_class <= 0:
-        raise ValueError("--calibration-windows-per-class doit être strictement positif.")
+        raise ValueError("--calibration-windows-per-class must be strictly positive.")
     random_generator = np.random.default_rng(seed)
     selected_indices: list[np.ndarray] = []
     for class_id in range(len(CLASS_NAMES)):
         candidates = np.flatnonzero(labels == class_id)
         if len(candidates) < per_class:
-            raise ValueError(f"Pas assez de fenêtres train pour la classe {CLASS_NAMES[class_id]}.")
+            raise ValueError(f"Not enough training windows for class {CLASS_NAMES[class_id]}.")
         selected_indices.append(random_generator.choice(candidates, size=per_class, replace=False))
     indices = np.concatenate(selected_indices)
     random_generator.shuffle(indices)
@@ -108,9 +108,9 @@ def main() -> None:
     )
 
     model = tf.keras.models.load_model(args.model_path, compile=False)
-    # TensorFlow 2.16 / Keras 3 échoue parfois à convertir directement un fichier
-    # .keras avec des poids variables sur macOS. Le SavedModel temporaire fige la
-    # signature d'inférence et évite ce défaut du convertisseur MLIR.
+    # TensorFlow 2.16 / Keras 3 may fail to convert a .keras file with variable
+    # weights directly on macOS. A temporary SavedModel freezes the inference
+    # signature and avoids this MLIR converter issue.
     with tempfile.TemporaryDirectory(prefix="motionsense_tflite_") as temporary_directory:
         saved_model_path = Path(temporary_directory) / "saved_model"
         model.export(str(saved_model_path))
@@ -149,10 +149,10 @@ def main() -> None:
         json.dump(export_metadata, handle, ensure_ascii=False, indent=2)
         handle.write("\n")
 
-    print(f"Modèle TensorFlow Lite int8 exporté : {args.output_path}")
-    print(f"Taille : {len(tflite_model)} octets")
-    print(f"Calibration : {len(calibration_windows)} fenêtres issues uniquement de train")
-    print(f"Métadonnées : {args.metadata_path}")
+    print(f"Exported int8 TensorFlow Lite model: {args.output_path}")
+    print(f"Size: {len(tflite_model)} bytes")
+    print(f"Calibration: {len(calibration_windows)} windows from training data only")
+    print(f"Metadata: {args.metadata_path}")
 
 
 if __name__ == "__main__":

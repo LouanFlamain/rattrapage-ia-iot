@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Mesure de façon reproductible la taille et la latence du modèle TFLite."""
+"""Measure TensorFlow Lite model size and latency reproducibly."""
 
 from __future__ import annotations
 
@@ -24,8 +24,8 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--model-path", type=Path, default=Path("models/activity_cnn_int8.tflite"))
     parser.add_argument("--manifest", type=Path, default=Path("data/processed/manifest.csv"))
     parser.add_argument("--training-metadata", type=Path, default=Path("models/training_metadata.json"))
-    parser.add_argument("--runs", type=int, default=1000, help="nombre d'inférences chronométrées")
-    parser.add_argument("--warmup-runs", type=int, default=100, help="inférences de chauffe exclues de la mesure")
+    parser.add_argument("--runs", type=int, default=1000, help="number of timed inferences")
+    parser.add_argument("--warmup-runs", type=int, default=100, help="warm-up inferences excluded from the benchmark")
     parser.add_argument("--report-path", type=Path, default=Path("reports/edge_benchmark.json"))
     return parser.parse_args()
 
@@ -57,7 +57,7 @@ def quantize(values: np.ndarray, tensor_details: dict[str, Any]) -> np.ndarray:
     scale, zero_point = tensor_details["quantization"]
     if np.issubdtype(dtype, np.integer):
         if scale == 0:
-            raise ValueError("Quantification d'entrée invalide (échelle nulle).")
+            raise ValueError("Invalid input quantization (zero scale).")
         limits = np.iinfo(dtype)
         encoded = np.round(values / scale + zero_point)
         return np.clip(encoded, limits.min, limits.max).astype(dtype)
@@ -78,7 +78,7 @@ def summary_milliseconds(samples_ns: list[int]) -> dict[str, float]:
 def main() -> None:
     args = parse_arguments()
     if args.runs <= 0 or args.warmup_runs < 0:
-        raise SystemExit("--runs doit être positif et --warmup-runs ne peut pas être négatif.")
+        raise SystemExit("--runs must be positive and --warmup-runs cannot be negative.")
 
     metadata = load_json(args.training_metadata)
     test_subjects = {int(subject) for subject in metadata["participant_split"]["test"]}
@@ -98,8 +98,8 @@ def main() -> None:
     output_details = interpreter.get_output_details()[0]
     quantized_windows = [quantize(window, input_details) for window in selected_windows]
 
-    # Le chargement du modèle et l'allocation ne sont pas inclus : ils n'arrivent
-    # qu'au démarrage de l'objet. La chauffe stabilise le délégué CPU de l'hôte.
+    # Loading and allocation are excluded because they happen only when the device
+    # starts. Warm-up stabilizes the host CPU delegate.
     for window in quantized_windows[: min(args.warmup_runs, len(quantized_windows))]:
         interpreter.set_tensor(input_details["index"], window)
         interpreter.invoke()
@@ -122,7 +122,7 @@ def main() -> None:
         "input_shape": input_details["shape"].tolist(),
         "input_dtype": np.dtype(input_details["dtype"]).name,
         "latency": summary_milliseconds(latency_ns),
-        "measurement_scope": "set_tensor + invoke + get_tensor; allocation, CSV, fenêtrage et quantification exclus",
+        "measurement_scope": "set_tensor + invoke + get_tensor; allocation, CSV reading, windowing and quantization excluded",
         "host": {
             "system": platform.system(),
             "release": platform.release(),
@@ -137,13 +137,13 @@ def main() -> None:
         handle.write("\n")
 
     latency = benchmark["latency"]
-    print(f"Taille du modèle : {benchmark['model_size_bytes']} octets ({benchmark['model_size_kib']:.2f} KiB)")
+    print(f"Model size: {benchmark['model_size_bytes']} bytes ({benchmark['model_size_kib']:.2f} KiB)")
     print(
-        "Latence TFLite moyenne : "
+        "Mean TFLite latency: "
         f"{latency['mean_ms']:.4f} ms "
-        f"(médiane {latency['median_ms']:.4f} ms, p95 {latency['p95_ms']:.4f} ms)"
+        f"(median {latency['median_ms']:.4f} ms, p95 {latency['p95_ms']:.4f} ms)"
     )
-    print(f"Rapport : {args.report_path}")
+    print(f"Report: {args.report_path}")
 
 
 if __name__ == "__main__":

@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
-"""Nettoie les enregistrements MotionSense DeviceMotion.
+"""Clean MotionSense DeviceMotion recordings.
 
-Le script est volontairement indépendant de bibliothèques tierces. Il produit un
-CSV propre par enregistrement et deux fichiers d'audit dans ``data/processed``.
-La normalisation n'est pas effectuée ici : ses statistiques devront être
-apprises exclusivement sur le sous-ensemble d'entraînement à l'étape suivante.
+The script deliberately uses no third-party dependencies. It creates one clean
+CSV per recording and two audit files in ``data/processed``. Normalization is
+not performed here: its statistics must be learned from the training subset only.
 """
 
 from __future__ import annotations
@@ -21,12 +20,12 @@ from typing import Iterable
 
 
 ACTIVITY_TO_ID = {
-    "dws": 0,  # descente d'escaliers
-    "ups": 1,  # montée d'escaliers
-    "wlk": 2,  # marche
+    "dws": 0,  # downstairs
+    "ups": 1,  # upstairs
+    "wlk": 2,  # walking
     "jog": 3,  # jogging
-    "sit": 4,  # assis
-    "std": 5,  # debout
+    "sit": 4,  # sitting
+    "std": 5,  # standing
 }
 
 SENSOR_COLUMNS = (
@@ -51,19 +50,19 @@ def parse_arguments() -> argparse.Namespace:
         "--input-dir",
         type=Path,
         default=Path("data/raw/A_DeviceMotion_data"),
-        help="répertoire A_DeviceMotion_data extrait de l'archive MotionSense",
+        help="A_DeviceMotion_data directory extracted from the MotionSense archive",
     )
     parser.add_argument(
         "--output-dir",
         type=Path,
         default=Path("data/processed"),
-        help="répertoire où écrire les enregistrements nettoyés et les audits",
+        help="directory where cleaned recordings and audits are written",
     )
     return parser.parse_args()
 
 
 def iter_recordings(input_dir: Path) -> Iterable[tuple[str, int, int, Path]]:
-    """Retourne les CSV valides avec leur activité, essai et participant."""
+    """Yield valid CSV files together with their activity, trial and subject."""
     for activity_dir in sorted(input_dir.iterdir()):
         match = RECORDING_DIRECTORY.fullmatch(activity_dir.name)
         if not activity_dir.is_dir() or match is None:
@@ -76,7 +75,7 @@ def iter_recordings(input_dir: Path) -> Iterable[tuple[str, int, int, Path]]:
 
 
 def to_finite_float(value: str | None) -> float | None:
-    """Convertit une cellule non vide en flottant fini ou renvoie None."""
+    """Convert a non-empty cell to a finite float, or return None."""
     if value is None or not value.strip():
         return None
     try:
@@ -87,16 +86,15 @@ def to_finite_float(value: str | None) -> float | None:
 
 
 def interpolate_missing(values: list[float | None]) -> tuple[list[float], int]:
-    """Comble les manques d'une colonne sans modifier le nombre d'échantillons.
+    """Fill missing values in a column without changing the sample count.
 
-    Une interpolation linéaire est appliquée entre deux valeurs valides. Les
-    manques au début ou à la fin reçoivent la première ou dernière valeur valide.
-    La cadence de 50 Hz est ainsi conservée, contrairement à une suppression de
-    lignes qui décalerait les fenêtres temporelles.
+    Linear interpolation is applied between two valid values. Missing values at
+    either end receive the first or last valid value. This preserves the 50 Hz
+    sampling rate, unlike removing rows which would shift time windows.
     """
     valid_indices = [index for index, value in enumerate(values) if value is not None]
     if not valid_indices:
-        raise ValueError("une colonne entière ne contient aucune valeur numérique")
+        raise ValueError("a complete column contains no numeric value")
 
     cleaned = [float(value) if value is not None else math.nan for value in values]
     first, last = valid_indices[0], valid_indices[-1]
@@ -119,24 +117,24 @@ def interpolate_missing(values: list[float | None]) -> tuple[list[float], int]:
 
 
 def clean_recording(source: Path) -> tuple[list[dict[str, float]], int, int]:
-    """Lit, valide et nettoie un fichier source unique.
+    """Read, validate and clean one source file.
 
-    Renvoie les valeurs capteur, le nombre de cellules imputées et le nombre de
-    lignes contenant au moins une cellule invalide avant nettoyage.
+    Return sensor values, the number of imputed cells and the number of rows
+    containing at least one invalid cell before cleaning.
     """
     with source.open("r", encoding="utf-8-sig", newline="") as csv_handle:
         reader = csv.DictReader(csv_handle)
         if reader.fieldnames is None:
-            raise ValueError("en-tête CSV absent")
+            raise ValueError("CSV header is missing")
         missing_columns = set(SENSOR_COLUMNS).difference(reader.fieldnames)
         if missing_columns:
             missing = ", ".join(sorted(missing_columns))
-            raise ValueError(f"colonnes capteur absentes : {missing}")
+            raise ValueError(f"missing sensor columns: {missing}")
 
         raw_rows = list(reader)
 
     if not raw_rows:
-        raise ValueError("fichier CSV vide")
+        raise ValueError("CSV file is empty")
 
     columns: dict[str, list[float | None]] = {column: [] for column in SENSOR_COLUMNS}
     invalid_rows = 0
@@ -191,8 +189,8 @@ def main() -> None:
     output_dir = args.output_dir.resolve()
     if not input_dir.is_dir():
         raise SystemExit(
-            f"Répertoire introuvable : {input_dir}. "
-            "Extrayez d'abord A_DeviceMotion_data.zip dans data/raw/."
+            f"Directory not found: {input_dir}. "
+            "Extract A_DeviceMotion_data.zip into data/raw/ first."
         )
 
     clean_root = output_dir / "clean_recordings"
@@ -235,7 +233,7 @@ def main() -> None:
         )
 
     if not manifest:
-        raise SystemExit("Aucun enregistrement MotionSense valide n'a été trouvé.")
+        raise SystemExit("No valid MotionSense recording was found.")
 
     manifest_path = output_dir / "manifest.csv"
     with manifest_path.open("w", encoding="utf-8", newline="") as csv_handle:
@@ -261,12 +259,12 @@ def main() -> None:
         audit_handle.write("\n")
 
     print(
-        "Nettoyage terminé : "
-        f"{audit['recordings_written']} enregistrements, "
-        f"{audit['samples_written_total']} échantillons, "
-        f"{audit['imputed_cells']} cellules imputées."
+        "Cleaning complete: "
+        f"{audit['recordings_written']} recordings, "
+        f"{audit['samples_written_total']} samples, "
+        f"{audit['imputed_cells']} imputed cells."
     )
-    print(f"Audit : {output_dir / 'cleaning_audit.json'}")
+    print(f"Audit: {output_dir / 'cleaning_audit.json'}")
 
 
 if __name__ == "__main__":

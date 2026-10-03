@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Simule l'arrivée progressive de mesures capteur et l'inférence TFLite."""
+"""Simulate progressive sensor measurements and TFLite inference."""
 
 from __future__ import annotations
 
@@ -27,7 +27,7 @@ def parse_arguments() -> argparse.Namespace:
         "--input-file",
         type=Path,
         default=DEFAULT_INPUT_FILE,
-        help="CSV nettoyé rejoué comme un flux de capteur",
+        help="cleaned CSV replayed as a sensor stream",
     )
     parser.add_argument("--model-path", type=Path, default=Path("models/activity_cnn_int8.tflite"))
     parser.add_argument("--metadata-path", type=Path, default=Path("models/tflite_metadata.json"))
@@ -35,12 +35,12 @@ def parse_arguments() -> argparse.Namespace:
         "--max-predictions",
         type=int,
         default=10,
-        help="limite d'affichages ; 0 rejoue le fichier entier",
+        help="maximum number of displayed predictions; 0 replays the whole file",
     )
     parser.add_argument(
         "--realtime",
         action="store_true",
-        help="attend entre deux prédictions pour reproduire la cadence d'un capteur à 50 Hz",
+        help="wait between predictions to reproduce a 50 Hz sensor rate",
     )
     return parser.parse_args()
 
@@ -51,12 +51,12 @@ def load_metadata(path: Path) -> dict[str, Any]:
 
 
 def quantize_input(values: np.ndarray, tensor_details: dict[str, Any]) -> np.ndarray:
-    """Convertit les flottants capteur vers le type int8 attendu par TFLite."""
+    """Convert floating-point sensor data to the int8 type expected by TFLite."""
     dtype = tensor_details["dtype"]
     scale, zero_point = tensor_details["quantization"]
     if np.issubdtype(dtype, np.integer):
         if scale == 0:
-            raise ValueError("Quantification d'entrée invalide (échelle nulle).")
+            raise ValueError("Invalid input quantization (zero scale).")
         quantized = np.round(values / scale + zero_point)
         limits = np.iinfo(dtype)
         return np.clip(quantized, limits.min, limits.max).astype(dtype)
@@ -64,7 +64,7 @@ def quantize_input(values: np.ndarray, tensor_details: dict[str, Any]) -> np.nda
 
 
 def dequantize_output(values: np.ndarray, tensor_details: dict[str, Any]) -> np.ndarray:
-    """Convertit la sortie TFLite en probabilités flottantes lisibles."""
+    """Convert the TFLite output to readable floating-point probabilities."""
     scale, zero_point = tensor_details["quantization"]
     if np.issubdtype(tensor_details["dtype"], np.integer):
         return (values.astype(np.float32) - zero_point) * scale
@@ -72,14 +72,14 @@ def dequantize_output(values: np.ndarray, tensor_details: dict[str, Any]) -> np.
 
 
 def iter_sensor_rows(input_file: Path, sensor_columns: list[str]) -> Iterator[tuple[dict[str, str], np.ndarray]]:
-    """Lit le CSV une ligne à la fois, comme un capteur enverrait ses mesures."""
+    """Read the CSV one row at a time, as a sensor would send its measurements."""
     with input_file.open("r", encoding="utf-8", newline="") as handle:
         reader = csv.DictReader(handle)
         if reader.fieldnames is None:
-            raise ValueError(f"En-tête absent : {input_file}")
+            raise ValueError(f"Missing header: {input_file}")
         missing = set(sensor_columns).difference(reader.fieldnames)
         if missing:
-            raise ValueError(f"Colonnes capteur absentes : {', '.join(sorted(missing))}")
+            raise ValueError(f"Missing sensor columns: {', '.join(sorted(missing))}")
         for row in reader:
             sample = np.asarray([float(row[column]) for column in sensor_columns], dtype=np.float32)
             yield row, sample
@@ -88,7 +88,7 @@ def iter_sensor_rows(input_file: Path, sensor_columns: list[str]) -> Iterator[tu
 def main() -> None:
     args = parse_arguments()
     if args.max_predictions < 0:
-        raise SystemExit("--max-predictions doit être positif ou nul.")
+        raise SystemExit("--max-predictions must be zero or positive.")
 
     metadata = load_metadata(args.metadata_path)
     class_names = metadata["class_names"]
@@ -102,16 +102,16 @@ def main() -> None:
     output_details = interpreter.get_output_details()[0]
     expected_shape = (1, window_size, len(sensor_columns))
     if tuple(input_details["shape"]) != expected_shape:
-        raise ValueError(f"Entrée TFLite inattendue : {input_details['shape']}, attendu : {expected_shape}")
+        raise ValueError(f"Unexpected TFLite input: {input_details['shape']}, expected: {expected_shape}")
 
-    # À chaque nouvelle fenêtre complète, le microcontrôleur reçoit ici 50 mesures
-    # supplémentaires (une seconde). La première décision est disponible après 2 s.
+    # Each complete window receives 50 new measurements (one second). The first
+    # decision is available after two seconds.
     stride = int(metadata.get("stride_samples", window_size // 2))
     buffer: deque[np.ndarray] = deque(maxlen=window_size)
     predictions = 0
     correct_predictions = 0
-    print(f"Simulation du fichier : {args.input_file}")
-    print(f"Fenêtre : {window_size} mesures ({window_size / sampling_frequency:.1f} s), pas : {stride} mesures")
+    print(f"Simulating file: {args.input_file}")
+    print(f"Window: {window_size} samples ({window_size / sampling_frequency:.1f} s), stride: {stride} samples")
 
     for sample_index, (row, sample) in enumerate(iter_sensor_rows(args.input_file, sensor_columns), start=1):
         buffer.append(sample)
@@ -130,8 +130,8 @@ def main() -> None:
 
         elapsed_seconds = sample_index / sampling_frequency
         print(
-            f"t={elapsed_seconds:7.2f} s | mouvement détecté : {class_names[predicted_id]:>3} "
-            f"| confiance : {confidence * 100:5.1f} % | vérité fichier : {true_activity}"
+            f"t={elapsed_seconds:7.2f} s | detected activity: {class_names[predicted_id]:>3} "
+            f"| confidence: {confidence * 100:5.1f} % | file label: {true_activity}"
         )
         if args.realtime:
             time.sleep(stride / sampling_frequency)
@@ -139,8 +139,8 @@ def main() -> None:
             break
 
     if predictions == 0:
-        raise SystemExit("Le fichier ne contient pas assez de mesures pour former une fenêtre.")
-    print(f"{predictions} prédictions simulées ; accord avec le label du fichier : {correct_predictions}/{predictions}.")
+        raise SystemExit("The file does not contain enough samples to form a window.")
+    print(f"{predictions} simulated predictions; matches with the file label: {correct_predictions}/{predictions}.")
 
 
 if __name__ == "__main__":

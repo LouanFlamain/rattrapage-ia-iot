@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Évalue le modèle MotionSense sur les seuls participants du jeu de test."""
+"""Evaluate the MotionSense model on test-set participants only."""
 
 from __future__ import annotations
 
@@ -39,7 +39,7 @@ def load_test_windows(
     window_size: int,
     stride: int,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Reconstruit les fenêtres de test sans franchir les essais."""
+    """Rebuild test windows without crossing recording boundaries."""
     recordings: list[tuple[np.ndarray, int]] = []
     for row in load_manifest(manifest_path):
         if int(row["subject_id"]) not in test_subjects:
@@ -51,7 +51,7 @@ def load_test_windows(
             )
         )
     if not recordings:
-        raise ValueError("Aucun enregistrement de test n'a été trouvé dans le manifeste.")
+        raise ValueError("No test recording was found in the manifest.")
     return build_windows(recordings, window_size, stride)
 
 
@@ -103,7 +103,7 @@ def compute_metrics(matrix: np.ndarray) -> tuple[list[dict[str, float | int | st
 
 
 def identify_confusions(matrix: np.ndarray) -> list[dict[str, float | int | str]]:
-    """Retourne les erreurs vrai → prédit, ordonnées de la plus fréquente."""
+    """Return true-to-predicted errors sorted by descending frequency."""
     errors: list[dict[str, float | int | str]] = []
     for true_id, true_name in enumerate(CLASS_NAMES):
         row_total = int(matrix[true_id].sum())
@@ -149,7 +149,7 @@ def write_reports(
 def main() -> None:
     args = parse_arguments()
     if args.batch_size <= 0:
-        raise SystemExit("--batch-size doit être strictement positif.")
+        raise SystemExit("--batch-size must be strictly positive.")
 
     metadata = load_metadata(args.metadata_path)
     test_subjects = {int(subject) for subject in metadata["participant_split"]["test"]}
@@ -162,7 +162,7 @@ def main() -> None:
     model = tf.keras.models.load_model(args.model_path, compile=False)
     expected_shape = (None, int(metadata["window_size_samples"]), len(metadata["sensor_columns"]))
     if tuple(model.input_shape) != expected_shape:
-        raise ValueError(f"Entrée de modèle inattendue : {model.input_shape}, attendu : {expected_shape}")
+        raise ValueError(f"Unexpected model input: {model.input_shape}, expected: {expected_shape}")
 
     probabilities = model.predict(x_test, batch_size=args.batch_size, verbose=0)
     y_predicted = probabilities.argmax(axis=1).astype(np.int32)
@@ -181,10 +181,10 @@ def main() -> None:
     }
     write_reports(args.output_dir, matrix, per_class, report)
 
-    print(f"Jeu de test : {len(y_test)} fenêtres, participants {sorted(test_subjects)}")
-    print(f"Accuracy : {overall_metrics['accuracy']:.4f}")
-    print(f"F1 macro : {overall_metrics['macro_f1_score']:.4f}")
-    print(f"Rapports écrits dans : {args.output_dir}")
+    print(f"Test set: {len(y_test)} windows, participants {sorted(test_subjects)}")
+    print(f"Accuracy: {overall_metrics['accuracy']:.4f}")
+    print(f"Macro F1: {overall_metrics['macro_f1_score']:.4f}")
+    print(f"Reports written to: {args.output_dir}")
 
 
 if __name__ == "__main__":
